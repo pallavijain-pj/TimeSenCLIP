@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from src.utils.model_utils import model_config_load, pretrained_weights_ts
 from src.models.model import CrossViewModel
-from src.models.timesenclip import TimeSenCLIP
+from src.models.encoder import TimeSenCLIPEncoder as TimeSenCLIP
 from src.Evaluation import metrics
 from src.Evaluation.zeroshot_train_eval import val_run_tsms
 import clip
@@ -39,7 +39,7 @@ class TimeSenCLIPLearner(pl.LightningModule):
 
         self.TS_ViT = TimeSenCLIP(**self.train_model_kwargs).to(args.device)
 
-        self.learner = SenCLIPModel(
+        self.learner = CrossViewModel(
             image_size=args.input_resolution,
             embed_dim=1024 if args.ARCH == 'RN50' else 512,
             ts_seq=args.time_frames,

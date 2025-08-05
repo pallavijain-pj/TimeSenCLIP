@@ -1,0 +1,11 @@
+TimeSenCLIP:
+    image_size: "{input_resolution}"
+    time_frames: "{time_frames}"
+    dim: 512
+    mlp_dim: 256
+    depth: 6
+    heads: 8
+    spectral_bands: "{num_channels}"
+    dim_head: 64
+    dropout: 0.2
+    dropout_type: "{dropout_type}"

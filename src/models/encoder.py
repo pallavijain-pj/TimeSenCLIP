@@ -123,7 +123,12 @@ class TimeSenCLIPEncoder(nn.Module):
         time_pos = self.time_pos_encoding.expand(b, -1, -1)
 
         if n == 1:
-            time_pos = time_pos.mean(dim=1, keepdim=True)
+            # time_pos = time_pos.mean(dim=1, keepdim=True)
+            time_pos = F.interpolate(
+                    time_pos.permute(0, 2, 1).unsqueeze(-1),
+                    size=(1, 1),  # Ensure output size matches the required spatial dimensions
+                    mode='nearest'
+                ).squeeze(-1).permute(0, 2, 1)
         elif n == 4:
             time_pos = time_pos.view(b, 4, 3, d).median(dim=2).values
 

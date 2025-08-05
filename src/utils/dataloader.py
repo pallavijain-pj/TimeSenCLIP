@@ -3,8 +3,8 @@ def load_data(args):
     start_time = time.time()
 
     train_dataset, val_dataset, classes = dataset_sen4map(
-        args.h5data_path, args.sen_path, args.emb_path,
-        args.h5data_valpath,
+        args.h5data_train_path, args.sen_path, args.emb_path,
+        args.h5data_val_path,
         crop_size=args.crop_size,
         annual_composite=args.time_frames > 1,
         channels=args.channels,

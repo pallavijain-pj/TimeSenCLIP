@@ -2,8 +2,8 @@
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from config.cli_args import get_args
-from models.learner import TimeSenCLIPLearner
+from configs.cli_args import get_args
+from src.models.learner import TimeSenCLIPLearner
 from src.utils.dataloader import load_data
 from src.utils.model_utils import before_load_weights
 from src.utils.callbacks import get_callbacks

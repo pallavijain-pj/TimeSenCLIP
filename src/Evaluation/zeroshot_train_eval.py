@@ -8,12 +8,9 @@ from torchvision import transforms, utils
 from tqdm import tqdm
 import clip
 import logging
-
+from src.utils.image_preprocessor import TimeSenCLIPPreprocessor
 # Environment settings
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
-
-
-
 
 def zeroshot_classifier(model, classnames, templates, temp_context="class_context", device="cuda:3"):
     """
@@ -172,6 +169,8 @@ def test_run_tsms(
         if time_frames == 4:
             # Temporal median over 3 channels per time step
             images = images.view(images.size(0), 4, 3, *images.shape[2:]).median(dim=2)[0]
+            
+        preprocessor = TimeSenCLIPPreprocessor(device=device)
 
         # Get temporal-spectral features
         image_ts_features = ts_model(images)
