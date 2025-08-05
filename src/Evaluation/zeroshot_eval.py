@@ -45,7 +45,7 @@ class ModelManager:
 
 def main():
     args = get_args()
-
+    
     # Load dataset
     dataset, _, _, classes = sen4map_data.dataloader_sen4map(
         args.dataset_path,
@@ -55,7 +55,7 @@ def main():
         annual_composite=True if args.time_frames != 1 else False,
         train_size=0.999,
         label_type="labels",
-        resize=args.input_resolution
+        return_coords=False 
     )
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True, num_workers=4)
     

@@ -1,261 +1,141 @@
+# sen4map_dataset.py
 import torch
 from torch.utils.data import Dataset
-from torchvision import transforms, utils,  io
-from torch import nn
-
-import cv2 
-from sklearn import preprocessing
-import rasterio as rio
 import numpy as np
-from PIL import Image
-import random, os, time
-import clip
-from torchvision import utils
-from tqdm import tqdm
-import h5py
+from .dataset_utils import SENTINEL_MEAN, SENTINEL_STD, BAND_NAMES, load_embeddings, normalize_tensor
 from .label_mapping import labels, crop_labels, class_list_lc
 
-"""
-lulc = ['lc1', 'lc1_label', 'lu1', 'lu1_label']
-
-"""
-
-"""
-Mean across RGB channels: tensor([0.5057, 0.4965, 0.5013])
-Standard deviation across RGB channels: tensor([0.2457, 0.2420, 0.2416])
-
-Mean across RGB channels: tensor([0.2150, 0.2181, 0.1285])
-Standard deviation across RGB channels: tensor([0.0992, 0.0700, 0.0569])
-"""
-
-def load_embeddings(emb_path):
-        start_time = time.time()
-        print("Loading embedding dictionary...")
-        try:
-            emb_dict = torch.load(emb_path, map_location='cpu')
-        except Exception as e:
-            raise RuntimeError(f"Error loading embedding file: {e}")
-        print(f"Embedding dictionary loaded in {(time.time() - start_time) / 60:.2f} minutes")
-        return emb_dict
 
 class BaseSen4MapDataset(Dataset):
-    def __init__(self, h5data_path: str, crop_size: int = 1, channels: list = None, 
-                 annual_composite: bool = True, resize: int = 224, device: str = "cpu"):
-        
-        self.bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
-        self.mean = [67.0, 122.0, 93.27, 158.5, 160.77, 174.27, 162.27, 149.0, 84.5, 66.27]
-        self.std = [2089.0, 2598.45, 3214.5, 3620.45, 4033.61, 4613.0, 4825.45, 4945.72, 5140.84, 4414.45]
-
-    
-        self.resize = resize
+    def __init__(self, h5data_path, crop_size=1, channels=None, annual_composite=True, resize=224, device="cpu"):
+        self.channels = channels or BAND_NAMES
+        self.band_idx = [BAND_NAMES.index(ch) for ch in self.channels]
         self.crop_size = crop_size
-        self.channels = channels if channels is not None else self.bands
-        self.band_idx = [self.bands.index(channel) for channel in self.channels]
+        self.resize = resize
         self.annual_composite = annual_composite
         self.device = device
-
+        self.mean = [SENTINEL_MEAN[i] for i in self.band_idx]
+        self.std = [SENTINEL_STD[i] for i in self.band_idx]
         self._load_h5data(h5data_path)
-        # self._load_embeddings(emb_path)
 
-    def _load_h5data(self, h5data_path):
-        start_time = time.time()
-        print("Loading H5Data...")
-        try:
-            self.h5data_f = h5py.File(h5data_path, 'r')
-            self.h5data = list(self.h5data_f.keys())
-        except Exception as e:
-            raise RuntimeError(f"Error opening HDF5 file: {e}")
-        print(f"H5Data loaded in {time.time() - start_time:.2f} seconds")
+    def _load_h5data(self, h5_path):
+        print("Loading HDF5 data...")
+        self.h5data_f = h5py.File(h5_path, 'r')
+        self.h5data = list(self.h5data_f.keys())
+        print(f"Loaded {len(self.h5data)} samples.")
 
-   
-    def __len__(self):
-        return len(self.h5data)
-
-    def crop_center(self, img: torch.Tensor, cropx: int, cropy: int):
-        """Crop the center of the image."""
-        c, t, y, x = img.shape
-        startx = x // 2 - (cropx // 2)
-        starty = y // 2 - (cropy // 2)
+    def crop_center(self, img, cropx, cropy):
+        _, t, y, x = img.shape
+        startx = x // 2 - cropx // 2
+        starty = y // 2 - cropy // 2
         return img[:, :, starty:starty + cropy, startx:startx + cropx]
 
-    def calculate_annual_composite(self, image: torch.Tensor, image_ids: list):
-        """Generate annual composite image."""
-        months = [f'2018{str(i).zfill(2)}' for i in range(1, 13)]
-        month_composites = []
+    def calculate_annual_composite(self, img, image_ids):
+        months = [f'2018{str(m).zfill(2)}' for m in range(1, 13)]
+        composites = []
 
         for month in months:
-            indices = [i for i, img_id in enumerate(image_ids) if month in img_id]
-            if not indices:
-                indices = range(image.shape[1])
+            idxs = [i for i, id_ in enumerate(image_ids) if month in id_]
+            idxs = idxs if idxs else list(range(img.shape[1]))
+            stack = torch.stack([img[:, i, :, :] for i in idxs])
+            composites.append(torch.median(stack, dim=0)[0])
 
-            monthly_stack = torch.stack([image[:, i, :, :] for i in indices])
-            month_composites.append(torch.median(monthly_stack, dim=0)[0])
-
-        return torch.stack(month_composites, dim=0) + 1
+        return torch.stack(composites) + 1
 
     def get_data(self, im):
-        """Get and preprocess the image data."""
         mask = torch.tensor(im['SCL'] < 9, dtype=torch.bool)
         image = torch.stack([
-            torch.tensor(np.where(mask.cpu(), im[channel].astype(np.float32), 0), dtype=torch.float32)
-            for channel in self.channels
+            torch.tensor(np.where(mask, im[ch], 0), dtype=torch.float32) for ch in self.channels
         ])
+        img = self.calculate_annual_composite(image, im.attrs['Image_ID'].tolist()) \
+            if self.annual_composite else torch.median(image, dim=1, keepdim=True).values.permute(1, 0, 2, 3)
 
-        composite_image = (
-            self.calculate_annual_composite(image, im.attrs['Image_ID'].tolist())
-            if self.annual_composite
-            else torch.median(image, dim=1, keepdim=True).values.permute(1, 0, 2, 3)
-        )
+        if self.crop_size < img.shape[2]:
+            img = self.crop_center(img, self.crop_size, self.crop_size)
 
-        if self.crop_size < composite_image.shape[2]:
-            composite_image = self.crop_center(composite_image, self.crop_size, self.crop_size)
-
-        return composite_image
-
-
-        
-
+        return normalize_tensor(img, self.mean, self.std)
 class Sen4MapDataset(BaseSen4MapDataset):
-    def __init__(self, h5data_path: str, sen_paths: str, emb_dict: dict, crop_size: int = 1, lulc_type: str = 'lc1', channels: list = None, annual_composite: bool = True, resize: int = 128, label_type: str = 'labels', device: str = 'cpu'):
-        super().__init__(h5data_path, crop_size, channels, annual_composite, resize)
+    def __init__(self, h5data_path, sen_paths, emb_dict, crop_size=1, lulc_type='lc1',
+                 channels=None, annual_composite=True, resize=128, label_type='labels', device='cpu'):
+        super().__init__(h5data_path, crop_size, channels, annual_composite, resize, device)
 
-        path_sen = np.load(sen_paths)
-        paths_sen = [f'Lucas_Point_{path.split("/")[-1].split(".")[0]}' for path in path_sen]
+        paths_sen = [f'Lucas_Point_{p.split("/")[-1].split(".")[0]}' for p in np.load(sen_paths)]
         self.h5data = list(set(self.h5data) & set(paths_sen))
+
         self.emb_dict = emb_dict
         self.label_map = labels if label_type == "labels" else crop_labels
         self.lulc_type = lulc_type
         self.classes = class_list_lc
 
-    def _transform(self, image):
-        mean = [self.mean[i] for i in self.band_idx]
-        std = [self.std[i] for i in self.band_idx]
-    
-        transform = transforms.Compose([
-                transforms.Normalize(mean, std), 
-            ])
-        return transform(image)
-
-    def _transform_resize(self, image):
-        transform = transforms.Compose([
-                transforms.Resize((self.resize,self.resize), interpolation= transforms.InterpolationMode.BILINEAR),
-            ])
-        return transform(image)
-    def __getitem__(self, index: int):
-        im_id = self.h5data[index]
+    def __getitem__(self, idx):
+        im_id = self.h5data[idx]
         im = self.h5data_f[im_id]
         nuts = im.attrs['nuts0']
-       
         emb_id = f"{nuts}_{im_id.split('_')[-1]}"
-        embeddings = [self.emb_dict[f'{emb_id}{dir}'] for dir in ['W', 'E', 'N', 'S']]
-        frozen_emb = torch.cat(embeddings, dim=0)
+        embeddings = torch.cat([self.emb_dict[f"{emb_id}{d}"] for d in ['W', 'E', 'N', 'S']], dim=0)
 
         image = self.get_data(im)
-      
-        image = self._transform(image)
-        
-        label = self.label_map[im.attrs[self.lulc_type]]
-        label = torch.tensor(label, dtype=torch.long)
-        return frozen_emb, image, label
-
+        label = torch.tensor(self.label_map[im.attrs[self.lulc_type]], dtype=torch.long)
+        return embeddings, image, label
     
-
-
- 
 class Sen4MapDataset_1x1(BaseSen4MapDataset):
-    def __init__(self, h5data_path: str, sen_paths: str, emb_dict: dict, lulc_type: str = 'lc1', channels: list = None, annual_composite: bool = True, label_type: str = 'labels', device: str = 'cpu', return_coords: bool = False):
-        super().__init__(h5data_path, 1, channels, annual_composite, 1)
+    def __init__(self, h5data_path, sen_paths, emb_dict, lulc_type='lc1', channels=None,
+                 annual_composite=True, label_type='labels', device='cpu', return_coords=False):
+        super().__init__(h5data_path, 1, channels, annual_composite, 1, device)
 
-   
-        rem_keys = ['Lucas_Point_45061526', "Lucas_Point_45281654", "Lucas_Point_47501690"]
-        path_sen = np.load(sen_paths)
-        paths_sen = [f'Lucas_Point_{path.split("/")[-1].split(".")[0]}' for path in path_sen]
-        self.h5data = list(set(self.h5data) & set(paths_sen))
-        self.h5data = list(set(self.h5data) - set(rem_keys))
+        exclude = {'Lucas_Point_45061526', "Lucas_Point_45281654", "Lucas_Point_47501690"}
+        paths_sen = [f'Lucas_Point_{p.split("/")[-1].split(".")[0]}' for p in np.load(sen_paths)]
+        self.h5data = list(set(self.h5data) & set(paths_sen) - exclude)
+
         self.emb_dict = emb_dict
         self.label_map = labels if label_type == "labels" else crop_labels
         self.lulc_type = lulc_type
         self.classes = class_list_lc
         self.return_coords = return_coords
-        
-    def __len__(self):
-        return len(self.h5data)
-    def _transform(self, image):
-      
-        mean = [self.mean[i] for i in self.band_idx]
-        std = [self.std[i] for i in self.band_idx]
-        
-        transform = transforms.Compose([
-                transforms.Normalize(mean, std), 
-            ])
-        return transform(image)
-    def __getitem__(self, index):
-        im_id = self.h5data[index]
+
+    def __getitem__(self, idx):
+        im_id = self.h5data[idx]
         im = self.h5data_f[im_id]
         nuts = im.attrs['nuts0']
-
         emb_id = f"{nuts}_{im_id.split('_')[-1]}"
-        embeddings = [self.emb_dict[f'{emb_id}{dir}'] for dir in ['W', 'E', 'N', 'S']]
-        frozen_emb = torch.cat(embeddings, dim=0)
+        embeddings = torch.cat([self.emb_dict[f"{emb_id}{d}"] for d in ['W', 'E', 'N', 'S']], dim=0)
 
         image = im['image'][:]
-        if len(self.channels) < 10:
-            image = self.stack_selected_channels(image)
-        else:
-            image = torch.tensor(image, dtype=torch.float32)
-        
-        if not self.annual_composite:
-            image = self.get_composite(image)
-     
-        image = self._transform(image)
-        image = torch.clamp(image, 0.0, 1.0)
-        
+        image = torch.tensor(image, dtype=torch.float32)
+        image = self.get_composite(image) if not self.annual_composite else image
+        image = normalize_tensor(image, self.mean, self.std)
+        image = torch.clamp(image, 0, 1)
 
-        label = self.label_map[im.attrs[self.lulc_type]]
-        label = torch.tensor(label, dtype=torch.long)
+        label = torch.tensor(self.label_map[im.attrs[self.lulc_type]], dtype=torch.long)
+
         if self.return_coords:
-            coords = im.attrs['Coordinates']
-            coords = torch.tensor(coords, dtype=torch.float32)
-            return frozen_emb, image, label, coords
-        return frozen_emb, image, label
+            coords = torch.tensor(im.attrs['Coordinates'], dtype=torch.float32)
+            return embeddings, image, label, coords
+        return embeddings, image, label
 
-    def stack_selected_channels(self, image):
-        """
-        Stack only the selected channels.
-        """
-        selected_channels =  [torch.tensor(image[:, i, :, :], dtype=torch.float32) for i in self.band_idx]
-        stacked_image = torch.stack(selected_channels, dim=1)
-        return stacked_image  
-
-    def get_composite(self, im):
-        composite_image = torch.median(im, dim=0, keepdim=True).values#.permute(1, 0, 2, 3)
-        return composite_image  # Return composite image tensor
+    def get_composite(self, img):
+        return torch.median(img, dim=0, keepdim=True).values
 
 
+def dataset_sen4map(h5data_path, sen_path, emb_path, test_path=None, lulc_type='lc1',
+                   crop_size=1, channels=None, annual_composite=True, label_type='labels',
+                    resize=None, device='cpu', return_coords=False):
 
-def dataset_sen4map(h5data_path: str, sen_path: str, emb_path: str, test_path: str = None, lulc_type: str = 'lc1', crop_size: int = 1, channels: list = None, annual_composite: bool = True, label_type: str = 'labels', resize: int = None, device: str = 'cpu',return_coords: bool = False):
-    
     emb_dict = load_embeddings(emb_path)
-       
-    if crop_size>1 and crop_size!=9 and crop_size!=5:
-        train_dataset = Sen4MapDataset(h5data_path, sen_path, emb_dict, crop_size=crop_size, lulc_type=lulc_type, channels=channels, annual_composite=annual_composite, resize=resize, label_type=label_type, device=device)
+
+    if crop_size > 1 and crop_size not in [5, 9]:
+        train_dataset = Sen4MapDataset(h5data_path, sen_path, emb_dict, crop_size, lulc_type, channels,
+                                       annual_composite, resize, label_type, device)
     else:
-        train_dataset = Sen4MapDataset_1x1(h5data_path, sen_path, emb_dict, lulc_type=lulc_type, channels=channels, annual_composite=annual_composite, label_type=label_type, device=device, return_coords=return_coords)
-    print(f"Train Dataset: {len(train_dataset)}")
+        train_dataset = Sen4MapDataset_1x1(h5data_path, sen_path, emb_dict, lulc_type, channels,
+                                           annual_composite, label_type, device, return_coords)
 
     if test_path:
-        if crop_size>1 and crop_size!=9 and crop_size!=5:
-            test_dataset = Sen4MapDataset(test_path, sen_path, emb_dict, crop_size=crop_size, lulc_type=lulc_type, channels=channels, annual_composite=annual_composite, resize=resize, label_type=label_type, device=device)
-        else:
-            test_dataset = Sen4MapDataset_1x1(test_path, sen_path, emb_dict, lulc_type=lulc_type, channels=channels, annual_composite=annual_composite, label_type=label_type, device=device, return_coords=return_coords)
-
-        class_list = test_dataset.classes
-        print(f"Test Dataset: {len(test_dataset)}")
-        return train_dataset, test_dataset, class_list
+        test_dataset = Sen4MapDataset(test_path, sen_path, emb_dict, crop_size, lulc_type, channels,
+                                      annual_composite, resize, label_type, device) \
+            if crop_size > 1 and crop_size not in [5, 9] else \
+            Sen4MapDataset_1x1(test_path, sen_path, emb_dict, lulc_type, channels,
+                               annual_composite, label_type, device, return_coords)
+        return train_dataset, test_dataset, test_dataset.classes
 
     return train_dataset
-
-
-
- 
-
