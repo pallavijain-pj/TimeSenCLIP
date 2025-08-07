@@ -4,12 +4,12 @@ import argparse
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_dir', type=str, default='/home/pallavi/DATA')
-    parser.add_argument('--root_data_dir', type=str, default='/home/pallavi/DATA/Datasets/Sentinel2_Lucas')
-    parser.add_argument('--emb_path', type=str, default='/home/pallavi/DATA/Datasets/Lucas_Frozen_Embeddings/lucas_swen_hfclipemb512_ViTB32.pt')
-    parser.add_argument('--sen_path', type=str, default='/home/pallavi/DATA/Datasets/sentinel_paths.npy')
-    parser.add_argument('--h5data_train_path', type=str, default='/home/pallavi/DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split-wise/1x1_crops/train.h5')
-    parser.add_argument('--h5data_val_path', type=str, default='/home/pallavi/DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split-wise/1x1_crops/val.h5')
+    parser.add_argument('--root_dir', type=str, default='./')
+    parser.add_argument('--root_data_dir', type=str, default='./Datasets/Sentinel2_Lucas')
+    parser.add_argument('--emb_path', type=str, default='./Datasets/Lucas_Frozen_Embeddings/lucas_clipemb512_ViTB32.pt')
+    parser.add_argument('--sen_path', type=str, default='./Datasets/sentinel_paths.npy')
+    parser.add_argument('--h5data_train_path', type=str, default='./Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split-wise/1x1_crops/train.h5')
+    parser.add_argument('--h5data_val_path', type=str, default='./Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split-wise/1x1_crops/val.h5')
     parser.add_argument('--version_fold', type=str, default='v1')
     parser.add_argument('--ts_arch', type=str, default='TimeSenCLIP')
  

@@ -16,7 +16,7 @@ from src.Evaluation.metrics import class_wise_accuracy, accuracy
 
 def get_args():
     parser = ArgumentParser(description='TimeSenCLIP Zeroshot Inference', formatter_class=RawTextHelpFormatter)
-    parser.add_argument('--dataset_path', type=str, default='./DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/1x1_crops/test_with_eunis.h5')
+    parser.add_argument('--dataset_path', type=str, default='./Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/1x1_crops/test_with_eunis.h5')
     parser.add_argument('--h5data_testpath', type=str, default=None)
     parser.add_argument('--checkpoint', type=str, default='./checkpoints/TimeSenCLIP.ckpt')
     parser.add_argument('--input_resolution', type=int, default=1)
