@@ -6,22 +6,32 @@ import numpy as np
 from tqdm import tqdm
 from argparse import ArgumentParser, RawTextHelpFormatter
 
-from Data import sen4map_data
-from models.encoder import TimeSenCLIPEncoder as TimeSenCLIP
-from Evaluation.zeroshot_train_eval import test_run_tsms
-from utils.text_template import template_generic
-from .metrics import class_wise_accuracy, accuracy
+from src.Data import sen4map_data
+from src.Data.dataloader import load_data
+from src.models.encoder import TimeSenCLIPEncoder as TimeSenCLIP
+from src.Evaluation.zeroshot_train_eval import test_run_tsms
+
+from src.utils.prompt_template import template_generic
+from src.Evaluation.metrics import class_wise_accuracy, accuracy
 
 def get_args():
-    parser = ArgumentParser(description='CLIP Temporal Spectral Model Inference', formatter_class=RawTextHelpFormatter)
-    parser.add_argument('--dataset_path', type=str, default='./DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/9x9_crops/test_with_eunis.h5')
+    parser = ArgumentParser(description='TimeSenCLIP Zeroshot Inference', formatter_class=RawTextHelpFormatter)
+    parser.add_argument('--dataset_path', type=str, default='./DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/1x1_crops/test_with_eunis.h5')
+    parser.add_argument('--h5data_testpath', type=str, default=None)
     parser.add_argument('--checkpoint', type=str, default='./checkpoints/TimeSenCLIP.ckpt')
-    parser.add_argument('--input_resolution', type=int, default=9)
+    parser.add_argument('--input_resolution', type=int, default=1)
+    parser.add_argument('--crop_size', type=int, default=1)
+    parser.add_argument('--return_coords', type=bool, default=False)
+    parser.add_argument('--train_size', type=float, default=0.999)
     parser.add_argument('--time_frames', type=int, default=12)
     parser.add_argument('--channels', nargs='+', default=['B4', 'B3', 'B2', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12'])
-    parser.add_argument('--model_arch', type=str, default="TimeSenCLIP")
+    parser.add_argument('--ts_arch', type=str, default="TimeSenCLIP")
     parser.add_argument('--clip_arch', type=str, default='ViT-B/32')
+    parser.add_argument('--BATCH_SIZE', type=int, default=64)
+    parser.add_argument('--NUM_WORKERS', type=int, default=8)
+    parser.add_argument('--version_fold', type=str, default='test')
     parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--label_type', type=str, default='lc', choices=['lc', 'lu', 'crop', 'bio','eunis'], help='Label type for evaluation')
     return parser.parse_args()
 
 class ModelManager:
@@ -45,21 +55,11 @@ class ModelManager:
 
 def main():
     args = get_args()
-    
+    label_type = args.label_type
     # Load dataset
-    dataset, _, _, classes = sen4map_data.dataloader_sen4map(
-        args.dataset_path,
-        test_path=None,
-        crop_size=args.input_resolution,
-        channels=args.channels,
-        annual_composite=True if args.time_frames != 1 else False,
-        train_size=0.999,
-        label_type="labels",
-        return_coords=False 
-    )
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True, num_workers=4)
-    
-    print(f"Loaded dataset with {len(dataset)} samples and {len(classes)} classes.")
+    dataloader, _,  classes = load_data(args, state='test')
+
+    print(f"Loaded dataset with {len(dataloader.dataset)} samples and {len(classes)} classes.")
 
     # Load models
     model_kwargs = {
@@ -72,7 +72,7 @@ def main():
         "spectral_bands": len(args.channels),
         "dim_head": 64,
         "dropout": 0.2,
-        "training": False
+        "dropout_type": "None"
     }
 
     model = ModelManager(args.device).load_model(args.checkpoint, model_kwargs)
@@ -92,12 +92,15 @@ def main():
                 model, clip_model, batch, classes, template,
                 time_frames=args.time_frames,
                 channels=args.channels,
-                device=args.device
+                device=args.device,
+                label_type="lc",
+                
             )
 
             top1_acc += acc_scores['total_correct_top1']
             top5_acc += acc_scores['total_correct_top5']
             total_samples += acc_scores['total_samples']
+
 
             logits_list.append(logits)
             labels_list.append(labels)
@@ -105,13 +108,15 @@ def main():
     # Final Metrics
     logits_stk = torch.cat(logits_list, dim=0)
     labels_stk = torch.cat(labels_list, dim=0)
-
+    logits_stk = logits_stk / (logits_stk.mean(0,keepdim=True) + 1e-6)
     acc1, acc5 = accuracy(logits_stk, labels_stk, topk=(1, 5))
-    class_results, avg_cls_acc = class_wise_accuracy(logits_stk, labels_stk, classes)
+  
+   
+    class_results, avg_cls_acc = class_wise_accuracy(logits_stk, labels_stk, classes[label_type])
 
     print("\n=== Evaluation Results ===")
-    print(f"Top-1 Accuracy (Normalized): {acc1.item():.2f}%")
-    print(f"Top-5 Accuracy (Normalized): {acc5.item():.2f}%")
+    print(f"Top-1 Accuracy (Normalized): {(acc1 / logits_stk.size(0)) * 100:.2f}%")
+    print(f"Top-5 Accuracy (Normalized): {(acc5 / logits_stk.size(0)) * 100:.2f}%")
     print(f"Top-1 Accuracy (Raw): {(top1_acc / total_samples) * 100:.2f}%")
     print(f"Top-5 Accuracy (Raw): {(top5_acc / total_samples) * 100:.2f}%")
     print(f"Average Class Accuracy: {avg_cls_acc:.2f}%")

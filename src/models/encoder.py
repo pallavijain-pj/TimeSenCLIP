@@ -33,7 +33,6 @@ class TimeSenCLIPEncoder(nn.Module):
         self.spectral_bands = spectral_bands
         self.dim = dim
         self.dropout_type = dropout_type
-
         patch_dim = spectral_bands * image_size * image_size
 
         self.spectral_embedding = nn.Sequential(
@@ -42,7 +41,7 @@ class TimeSenCLIPEncoder(nn.Module):
         )
 
         self.time_pos_encoding = nn.Parameter(torch.zeros(1, time_frames, dim))
-        self.class_token = nn.Parameter(torch.zeros(1, 1, dim))
+        self.time_token = nn.Parameter(torch.zeros(1, 1, dim))
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=dim,
@@ -74,32 +73,31 @@ class TimeSenCLIPEncoder(nn.Module):
         if self.dropout_type == 'TSMS':
             spectral_mask = self._spectral_dropout(S)
             x = x[:, :, spectral_mask]
-        else:
-            spectral_mask = torch.ones(S, dtype=torch.bool)
-
+        
         x = self.spectral_embedding(x)  # Shape: (B, T, dim)
 
         # Temporal dropout
         if self.dropout_type != 'None' and torch.rand(1).item() > 0.5:
             if self.dropout_type == 'TSMixAug':
-                x = self._tsmixaug(x)
+                x, mask = self._tsmixaug(x)
             elif self.dropout_type in ['RandomTS', 'TSMS']:
                 mask = self._random_temporal_dropout(x)
                 x = x[:, mask]
-        mask = torch.ones(x.size(1), dtype=torch.bool)  # default mask
+        else:
+            mask = torch.ones(x.size(1), dtype=torch.bool)  # default mask
 
         # Positional encoding
         time_pos = self.time_pos_encoding.expand(B, -1, -1)
         if self.training:
             if x.size(1) > 1:
-                time_pos = time_pos[:, :x.size(1)]
+                time_pos = time_pos[:, mask]
             else:
                 time_pos = time_pos.mean(dim=1, keepdim=True)
         x = x + time_pos
 
         # Add class token
-        class_token = self.class_token.expand(B, -1, -1)
-        x = torch.cat([class_token.to(x.dtype), x], dim=1)
+        time_token = self.time_token.expand(B, -1, -1)
+        x = torch.cat([time_token.to(x.dtype), x], dim=1)
 
         # Transformer
         x = self.transformer(x)
@@ -134,8 +132,8 @@ class TimeSenCLIPEncoder(nn.Module):
 
         x += time_pos
 
-        class_token = self.class_token.expand(b, -1, -1)
-        x = torch.cat([class_token.to(x.dtype), x], dim=1)
+        time_token = self.time_token.expand(b, -1, -1)
+        x = torch.cat([time_token.to(x.dtype), x], dim=1)
 
         x = self.transformer(x)
         x = self.to_latent(x[:, 0])
@@ -184,7 +182,9 @@ class TimeSenCLIPEncoder(nn.Module):
         Temporal augmentation strategy: pooling or quarter-drop.
         """
         if torch.rand(1).item() > 0.5:
-            return torch.median(x, dim=1, keepdim=True).values
+            x = torch.median(x, dim=1, keepdim=True).values
+            mask = torch.ones(x.size(1), dtype=torch.bool)
         else:
             mask = self._quarter_drop(x)
-            return x[:, mask]
+            x = x[:, mask]
+        return x, mask

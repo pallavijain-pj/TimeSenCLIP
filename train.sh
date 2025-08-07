@@ -1,0 +1,14 @@
+python  /home/pallavi/DATA/Granular-Project/CLIP_RS_TS_Project/TimeSenCLIP/train.py \
+            --root_dir '/home/pallavi/DATA/' \
+            --root_data_dir '/home/pallavi/DATA/Datasets/Sentinel2_Lucas/' \
+            --emb_path '/home/pallavi/DATA/Datasets/Lucas_Frozen_Embeddings/lucas_swen_hfclipemb512_ViTB32.pt' \
+            --sen_path '/home/pallavi/DATA/Datasets/Benchmark_Path_Files/train_sentinel_paths.npy'\
+            --h5data_train_path '/home/pallavi/DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/1x1_crops/train.h5'\
+            --h5data_val_path '/home/pallavi/DATA/Datasets/Sen4Map/datapub.fz-juelich.de/sen4map/split_wise/1x1_crops/val.h5'\
+            --version_fold 'test'\
+            --saved_model '/home/pallavi/DATA/Granular-Project/checkpoints/SenCLIP_TS/'\
+            --ts_arch 'TimeSenCLIP' \
+            --BATCH_SIZE 64 \
+            --NUM_WORKERS 8 \
+            --NUM_EPOCHS 100 \
+            --logit_learn

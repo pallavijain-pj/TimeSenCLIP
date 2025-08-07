@@ -9,6 +9,7 @@ from tqdm import tqdm
 import clip
 import logging
 from src.utils.image_preprocessor import TimeSenCLIPPreprocessor
+from src.Evaluation.metrics import accuracy
 # Environment settings
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
@@ -51,7 +52,7 @@ def zeroshot_classifier(model, classnames, templates, temp_context="class_contex
     return zeroshot_weights
 
 
-def val_run_tsms(ts_model, clip_model, batch, classes, device="cuda:0", temporal=12):
+def val_run_tsms(ts_model, clip_model, batch, classes, device="cuda:0", time_frames=12):
     """
     Evaluate temporal model against CLIP zero-shot classifier.
 
@@ -93,9 +94,9 @@ def val_run_tsms(ts_model, clip_model, batch, classes, device="cuda:0", temporal
         B, S, T, H, W = images.shape
 
         # Temporal aggregation
-        if temporal == 1:
+        if time_frames == 1:
             images = images.median(dim=2, keepdim=True)[0]
-        elif temporal == 4:
+        elif time_frames == 4:
             images = images.view(B, S, 4, 3, H, W).median(dim=3)[0]
 
         # Encode with TS model
@@ -125,6 +126,8 @@ def val_run_tsms(ts_model, clip_model, batch, classes, device="cuda:0", temporal
 
     return acc_scores
 
+
+
 def test_run_tsms(
     ts_model,
     clip_model,
@@ -133,11 +136,9 @@ def test_run_tsms(
     template,
     time_frames=12,
     channels=None,
-    device="cuda:3",
-    clip_eval=False,
+    device="cuda:0",
+    label_type="lc",
 ):
-   
-    # Set logging level if not already configured
     logging.basicConfig(level=logging.INFO)
 
     acc_scores = {}
@@ -146,37 +147,47 @@ def test_run_tsms(
 
     # Determine template context
     temp_context = 'class_context' if isinstance(template, dict) else 'unified'
-   
-    cls_list = classes
+
+    cls_list = classes[label_type] if isinstance(classes, dict) else classes
+    label2idx = {label: idx for idx, label in enumerate(cls_list)}
 
     # Generate zero-shot classifier prompts
     encoded_prompts = zeroshot_classifier(
         clip_model, cls_list, template, temp_context=temp_context, device=device
-    ).T  # Transpose to match (embedding_dim, num_classes)
+    ).T  # Transpose to shape (embedding_dim, num_classes)
 
     total_correct_top1 = 0
     total_correct_top5 = 0
     total_samples = 0
 
-    images, labels = batch
+    images, labels = batch['image'], batch[label_type]
     images = images.to(device)
-    labels = labels.to(device)
+
+    # Convert labels to tensor of integer indices
+    if isinstance(labels, list):
+        if isinstance(labels[0], list):  # flatten if nested
+            labels = [item for sublist in labels for item in sublist]
+        if isinstance(labels[0], str):  # convert strings to idx
+            labels = [label2idx[lbl] for lbl in labels]
+        labels = torch.tensor(labels, dtype=torch.long, device=device)
+    elif isinstance(labels, torch.Tensor):
+        if labels.dtype == torch.float32:
+            labels = labels.long()
+        labels = labels.to(device)
+    else:
+        raise ValueError("Unsupported label format for inference.")
 
     logging.debug(f"Input images shape: {images.shape}")
 
-    
     with torch.no_grad(), torch.cuda.amp.autocast():
         if time_frames == 4:
-            # Temporal median over 3 channels per time step
             images = images.view(images.size(0), 4, 3, *images.shape[2:]).median(dim=2)[0]
-            
-        preprocessor = TimeSenCLIPPreprocessor(device=device)
 
-        # Get temporal-spectral features
-        image_ts_features = ts_model(images)
-        image_ts_features = F.normalize(image_ts_features, dim=-1)  # Normalize embeddings
+        # Extract features
+        image_ts_features = ts_model.inference(images)
+        image_ts_features = F.normalize(image_ts_features, dim=-1)
 
-        # Compute logits (adjusted similarity score)
+        # Compute logits and apply adjustment
         logits = (image_ts_features @ encoded_prompts) / 2 + 1
 
         predictions = torch.argmax(logits, dim=1)
@@ -188,20 +199,24 @@ def test_run_tsms(
 
         # Compute top-1 and top-5 accuracy
         correct_top1, correct_top5 = accuracy(logits, labels, topk=(1, 5))
-
         total_correct_top1 += correct_top1
         total_correct_top5 += correct_top5
         total_samples += labels.size(0)
 
+    # Final Accuracy Metrics
     top1_acc = total_correct_top1 / total_samples
     top5_acc = total_correct_top5 / total_samples
-    logging.info(f"[{cls_type}] Top-1 Acc: {top1_acc:.4f}, Top-5 Acc: {top5_acc:.4f}")
+    logging.info(f"[{label_type}] Top-1 Acc: {top1_acc:.4f}, Top-5 Acc: {top5_acc:.4f}")
 
-    # Store results
+    # Concatenate all predictions
+    logits_stk = torch.cat(logits_list, dim=0)
+    labels_stk = torch.cat(labels_list, dim=0)
+
     acc_scores = {
         'total_correct_top1': total_correct_top1,
         'total_correct_top5': total_correct_top5,
         'total_samples': total_samples
     }
 
-    return acc_scores, logits_list, labels_list, encoded_prompts
+    return acc_scores, logits_stk, labels_stk, encoded_prompts
+

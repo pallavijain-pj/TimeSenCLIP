@@ -30,12 +30,12 @@ class CrossViewModel(nn.Module):
     """
     def __init__(
         self,
+        encoder: nn.Module,
         embed_dim: int = 512,
         pooling: str = 'avgpool',
         device: int = 0,
         queue_size: int = 2048,
         queue_data: Optional[torch.utils.data.DataLoader] = None,
-        tsvit_model: Optional[nn.Module] = None,
         pool_out: str = 'sum',
     ):
         super().__init__()
@@ -46,7 +46,7 @@ class CrossViewModel(nn.Module):
 
         print(f"[INFO] Using pooling method: {pooling}")
 
-        self.TS_ViT = tsvit_model
+        self.ts_encoder = encoder
         self.pooling_layer = self._init_pooling_layer(embed_dim)
 
         self.K = queue_size
@@ -88,7 +88,7 @@ class CrossViewModel(nn.Module):
 
         self.queue[:, ptr:ptr + batch_size] = keys.T
         self.queue_ptr[0] = (ptr + batch_size) % self.K
-
+    
     def _apply_pooling(self, y_emb: torch.Tensor) -> torch.Tensor:
         """
         Applies the selected pooling strategy on the input embeddings.
@@ -110,11 +110,11 @@ class CrossViewModel(nn.Module):
             labels (Tensor): Ground truth labels (N,)
         """
         with torch.cuda.amp.autocast():
-            ground_emb, ts_img = data  # y_emb, ts_img
+            ground_emb, ts_img = data[:2]  # y_emb, ts_img
 
             # Project and normalize embeddings
             ground_emb = self._apply_pooling(ground_emb)
-            ts_emb = self.TS_ViT(ts_img)
+            ts_emb = self.ts_encoder(ts_img)
 
             ground_emb = F.normalize(ground_emb, p=2, dim=-1)
             ts_emb = F.normalize(ts_emb, p=2, dim=-1)

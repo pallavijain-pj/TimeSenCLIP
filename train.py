@@ -1,29 +1,25 @@
-# File: train.py
+
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from configs.cli_args import get_args
-from src.models.learner import TimeSenCLIPLearner
-from src.utils.dataloader import load_data
+from src.utils.configs.cli_args import get_args
+from src.models.trainer import TimeSenCLIPLearner
+from src.Data.dataloader import load_data
 from src.utils.model_utils import before_load_weights
 from src.utils.callbacks import get_callbacks
 import numpy as np
 import torch
 
 def main(args):
-    args.version_fold = f'{args.version_fold}_{args.ts_arch}_{args.LOSS_TYPE}_{args.OPT}_{args.LR}_{args.BATCH_SIZE}'
+    args.version_fold = f'{args.version_fold}'
 
     train_loader, val_loader, classes = load_data(args)
-
+    
     wandb_logger = WandbLogger(name=f'{args.version_fold}', project='Granular_TS', id=args.id if args.resume else None)
 
     model = TimeSenCLIPLearner(args=args, classes=classes)
 
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
-    print('Trainable Parameters: ', [name for name, param in model.named_parameters() if param.requires_grad])
-    parameters = sum([np.prod(p.size()) for p in parameters]) / 1_000_000
-    print('Trainable Parameters: %.3fM' % parameters)
-
+    
     if args.resume:
         before_load_weights(f'{args.saved_model}{args.version_fold}/{args.resume_ckpt}')
 
