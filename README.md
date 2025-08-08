@@ -15,8 +15,6 @@ Built upon the **LUCAS** and **Sen4Map** datasets, TimeSenCLIP is evaluated on v
 TimeSenCLIP/
 ├── train.py                        # Training entry point
 ├── zeroshot.py                    # Zero-shot inference entry point
-├── configs/
-│   └── cli_args.py                # CLI argument parser
 ├── src/
 │   ├── models/
 │   │   ├── trainer.py             # Lightning wrapper for TimeSenCLIP
@@ -26,10 +24,13 @@ TimeSenCLIP/
 │   │   ├── dataloader.py          # Loads datasets
 │   │   ├── callbacks.py           # EarlyStopping, checkpointing, etc.
 │   │   └── model_utils.py         # Model weight loading utilities
+|   |   ├── configs/
+│         └── cli_args.py                # CLI argument parser
 │   ├── Evaluation/
 │   │   ├── zeroshot_train_eval.py # Zero-shot similarity scoring
 │   │   └── metrics.py             # Accuracy + class-wise eval
 │   └── Data/
 │       ├── sen4map_data.py        # Dataloader for Sen4Map Inference
-│       └── lucas_sen_data.py      # Dataloader for LUCAS-Sentinel data ✅
+│       └── lucas_sen_data.py      # Dataset  for LUCAS-Sentinel data ✅
+│       └── dataloader.py          # Dataloader to load training dataset (cross-view) and  Inference (Sen4Map test data)
 
