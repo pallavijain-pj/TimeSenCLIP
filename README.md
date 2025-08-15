@@ -12,9 +12,12 @@ Paper Under Review!
 
 [Dataset 🤗 ](Soon to be released)
 
-
-
 ---
+# Model Overview
+<div align="center">
+<img src="infograph_retrieval.png" width="1000" height="500">
+</div>
+
 
 ## 📦 Repository Structure
 ```text
@@ -39,4 +42,5 @@ TimeSenCLIP/
 │       ├── sen4map_data.py        # Dataloader for Sen4Map Inference
 │       └── lucas_sen_data.py      # Dataset  for LUCAS-Sentinel data ✅
 │       └── dataloader.py          # Dataloader to load training dataset (cross-view) and  Inference (Sen4Map test data)
-
+```
+Checkout our other work [SenCLIP](https://github.com/pallavijain-pj/SenCLIP)
