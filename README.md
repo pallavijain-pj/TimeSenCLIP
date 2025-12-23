@@ -1,5 +1,5 @@
 # TimeSenCLIP: A Time Series Vision-Language Model for Remote Sensing Using Single-Pixel
-
+[![arXiv](https://img.shields.io/badge/arXiv-2508.11919-red)](https://arxiv.org/abs/2508.11919)
 ---
 
 **TimeSenCLIP** is a lightweight vision-language model for remote sensing tasks that revisits the need for spatial context in satellite image classification. Instead of relying on large image patches or text supervision, TimeSenCLIP explores the use of **single-pixel inputs**, enriched with **temporal** and **spectral** information from Sentinel-2 imagery, paired with **cross-view supervision** from ground-level geo-tagged images.
