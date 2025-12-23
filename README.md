@@ -43,4 +43,13 @@ TimeSenCLIP/
 │       └── lucas_sen_data.py      # Dataset  for LUCAS-Sentinel data ✅
 │       └── dataloader.py          # Dataloader to load training dataset (cross-view) and  Inference (Sen4Map test data)
 ```
+## Citation
+```bibtex
+  @article{jain2025timesenclip,
+    title={TimeSenCLIP: A Vision-Language Model for Remote Sensing Using Single-Pixel Time Series},
+    author={Jain, Pallavi and Marcos, Diego and Ienco, Dino and Interdonato, Roberto and Berchoux, Tristan},
+    journal={arXiv preprint arXiv:2508.11919},
+    year={2025}
+  }
+```
 Checkout our other work [SenCLIP](https://github.com/pallavijain-pj/SenCLIP)
