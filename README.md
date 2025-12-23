@@ -15,7 +15,7 @@ Paper Under Review!
 ---
 # Model Overview
 <div align="center">
-<img src="illustration.arxiv.png" width="1000" height="500">
+<img src="illustration.png" width="1000" height="2000">
 </div>
 
 
