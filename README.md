@@ -1,4 +1,4 @@
-# TimeSenCLIP: A Time Series Vision-Language Model for Remote Sensing Using Single-Pixel
+# TimeSenCLIP: A Time Series Vision-Language Model for Remote Sensing
 
 [![arXiv](https://img.shields.io/badge/arXiv-2508.11919-red)](https://arxiv.org/abs/2508.11919)
 ---
