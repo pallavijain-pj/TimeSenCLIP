@@ -1,4 +1,5 @@
 # TimeSenCLIP: A Time Series Vision-Language Model for Remote Sensing Using Single-Pixel
+
 [![arXiv](https://img.shields.io/badge/arXiv-2508.11919-red)](https://arxiv.org/abs/2508.11919)
 ---
 
@@ -6,11 +7,9 @@
 
 Built upon the **[LUCAS 2018](https://ec.europa.eu/eurostat/web/lucas/database/2018)** and **[Sen4Map](https://datapub.fz-juelich.de/sen4map/)** datasets, TimeSenCLIP is evaluated on various classification tasks including LULC, crop type, and ecosystem type. We demonstrate that, when enhanced with temporal and spectral signals, **single-pixel inputs are sufficient for robust thematic mapping**—paving the way for efficient and large-scale remote sensing analysis without sacrificing performance.
 
-Paper Under Review!
+Accepted at [ISPRS Journal of Photogrammetary and Remote Sensing](https://doi.org/10.1016/j.isprsjprs.2026.03.043)
 
 [Model Checkpoints 🤗 ](Soon to be released)
-
-[Dataset 🤗 ](Soon to be released)
 
 ---
 # Model Overview
@@ -45,11 +44,14 @@ TimeSenCLIP/
 ```
 ## Citation
 ```bibtex
-  @article{jain2025timesenclip,
-    title={TimeSenCLIP: A Vision-Language Model for Remote Sensing Using Single-Pixel Time Series},
-    author={Jain, Pallavi and Marcos, Diego and Ienco, Dino and Interdonato, Roberto and Berchoux, Tristan},
-    journal={arXiv preprint arXiv:2508.11919},
-    year={2025}
-  }
+  @article{jain2026timesenclip,
+  title={TimeSenCLIP: A time series vision--language model for remote sensing},
+  author={Jain, Pallavi and Marcos, Diego and Ienco, Dino and Interdonato, Roberto and Berchoux, Tristan},
+  journal={ISPRS Journal of Photogrammetry and Remote Sensing},
+  volume={236},
+  pages={99--119},
+  year={2026},
+  publisher={Elsevier}
+}
 ```
 Checkout our other work [SenCLIP](https://github.com/pallavijain-pj/SenCLIP)
