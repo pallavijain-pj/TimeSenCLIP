@@ -51,7 +51,7 @@ model = TimeSenCLIPEncoder(
 # Download weights from HuggingFace Hub
 from huggingface_hub import hf_hub_download
 ckpt = hf_hub_download(repo_id="pallavijainpj/TimeSenCLIP", filename="TimeSenCLIP_1x1.ckpt")
-state_dict = torch.load(ckpt, map_location="cpu")
+state_dict = torch.load(ckpt, map_location="cpu")["state_dict"]
 model.load_state_dict(state_dict, strict=True)
 model.eval()
 
