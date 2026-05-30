@@ -3,6 +3,7 @@ import torch
 import time
 import numpy as np
 import h5py
+from torchvision import transforms
 
 # Sentinel-2 mean/std for 10 bands
 SEN4MAP_SENTINEL_MEAN = [67.0, 122.0, 93.27, 158.5, 160.77, 174.27, 162.27, 149.0, 84.5, 66.27]
@@ -24,4 +25,8 @@ def load_embeddings(emb_path):
 def normalize_tensor(tensor, mean, std):
     mean = torch.tensor(mean).view(1, -1, 1, 1).to(tensor.device)
     std = torch.tensor(std).view(1, -1, 1, 1).to(tensor.device)
-    return (tensor - mean) / (std + 1e-6)
+    transform = transforms.Compose([
+                transforms.Normalize(mean, std), 
+            ])
+    # return (tensor - mean) / (std + 1e-6)
+    return transform(tensor)

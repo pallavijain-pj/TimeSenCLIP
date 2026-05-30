@@ -38,6 +38,7 @@ class TimeSenCLIPEncoder(nn.Module):
         self.spectral_embedding = nn.Sequential(
             Rearrange('b t c h w -> b t (c h w)'),
             nn.Linear(patch_dim, dim),
+            # nn.LayerNorm(dim)  # Normalizes over the last dimension (embedding)
         )
 
         self.time_pos_encoding = nn.Parameter(torch.zeros(1, time_frames, dim))
@@ -114,6 +115,7 @@ class TimeSenCLIPEncoder(nn.Module):
         Returns:
             Tensor: Output embedding (B, dim)
         """
+        
         B, T, S, H, W = x.shape
         x = self.spectral_embedding(x)
 
@@ -141,7 +143,7 @@ class TimeSenCLIPEncoder(nn.Module):
 
     # ------------------------ Augmentation Methods ------------------------
 
-    def _random_temporal_dropout(self, x, min_frames=1, max_frames=12):
+    def _random_temporal_dropout(self, x, min_frames=1, max_frames=11):
         """
         Randomly select a subset of temporal frames to keep.
         """

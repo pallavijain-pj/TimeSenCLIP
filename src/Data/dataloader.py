@@ -1,8 +1,10 @@
+import os
 import time
+import torch
 from torch.utils.data import DataLoader, random_split
 from .dataset_utils import load_embeddings
 from .lucas_sen_data import CrossViewDataset
-from .sen4map_data import Sen4MapDataset_withlabels
+from .sen4map_data import Sen4MapDataset_withlabels, Sen4MapDataset_wImages_alllabels
 
 
 def create_crossview_training_dataset(
@@ -10,31 +12,29 @@ def create_crossview_training_dataset(
     sen_path,
     emb_path,
     test_path=None,
-    lulc_type='lc1',
+    lulc_type="lc1",
     crop_size=1,
     channels=None,
     annual_composite=True,
-    label_type='labels',
+    label_type="labels",
     resize=None,
-    device='cpu',
-    return_coords=False
+    device="cpu",
+    return_coords=False,
 ):
-    """
-    Creates a CrossView training (and optionally validation) dataset.
-    """
+    """Creates a CrossView training (and optionally validation) dataset."""
     emb_dict = load_embeddings(emb_path)
 
     train_dataset = CrossViewDataset(
         h5data_path, sen_path, emb_dict,
         lulc_type, channels, annual_composite,
-        label_type, device, return_coords
+        label_type, device, return_coords,
     )
 
     if test_path:
         test_dataset = CrossViewDataset(
             test_path, sen_path, emb_dict,
             lulc_type, channels, annual_composite,
-            label_type, device, return_coords
+            label_type, device, return_coords,
         )
         return train_dataset, test_dataset, test_dataset.classes
 
@@ -43,67 +43,57 @@ def create_crossview_training_dataset(
 
 def create_sen4map_inference_dataset(
     h5data_path,
-    test_path=None,
     crop_size=1,
     channels=None,
     annual_composite=True,
-    train_size=0.7,
-    label_type='all',
-    return_coords=False
+    return_coords=False,
+    metadata_csv=None,
 ):
-    """
-    Creates train/val/test splits for the Sen4Map dataset.
+    """Creates a Sen4Map inference dataset with all label types.
+
+    Args:
+        h5data_path: Path to the Sen4Map HDF5 test file.
+        metadata_csv: Optional path to the labels CSV file.  If None, the
+            bundled ``src/Data/labels_csv/Sen4Map_Test_all_labels.csv`` is used.
     """
     if channels is None:
-        channels = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
+        channels = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]
 
-    print("Initializing 1x1 crop dataset...")
+    if metadata_csv is None:
+        metadata_csv = os.path.join(
+            os.path.dirname(__file__),
+            "labels_csv",
+            "Sen4Map_Test_all_labels.csv",
+        )
 
-    dataset = Sen4MapDataset_withlabels(
+    print(f"Initializing dataset from {h5data_path}")
+    print(f"Using metadata CSV: {metadata_csv}")
+
+    dataset = Sen4MapDataset_wImages_alllabels(
         h5data_path=h5data_path,
+        metadata_csv=metadata_csv,
         channels=channels,
         annual_composite=annual_composite,
-        label_type=label_type,
-        transform=True,
-        return_coords=return_coords
+        return_coords=return_coords,
     )
-
-    class_dict = dataset.classes
-    dataset_size = len(dataset)
-    train_len = int(train_size * dataset_size)
-
-    if test_path:
-        val_len = dataset_size - train_len
-        train_dataset, val_dataset = random_split(dataset, [train_len, val_len])
-
-        test_dataset = Sen4MapDataset_withlabels(
-            h5data_path=test_path,
-            channels=channels,
-            annual_composite=annual_composite,
-            label_type=label_type,
-            transform=True,
-            return_coords=return_coords
-        )
-    else:
-        val_len = int((1.0 - train_size) / 2.0 * dataset_size)
-        test_len = dataset_size - train_len - val_len
-        train_dataset, val_dataset, test_dataset = random_split(
-            dataset, [train_len, val_len, test_len]
-        )
-
-    print(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}, Test: {len(test_dataset)}")
-
-    return train_dataset, val_dataset, test_dataset, class_dict
+    return dataset, dataset.classes
 
 
-def load_data(args, state='train'):
-    """
-    Main data loader interface. Handles both CrossView and Sen4Map datasets.
-    """
-    print("Script Launched....\nLoading Data....")
+def collate_fn(batch):
+    """Custom collate to handle mixed string + tensor batches."""
+    out = {}
+    for key in batch[0]:
+        values = [b[key] for b in batch]
+        out[key] = torch.stack(values) if isinstance(values[0], torch.Tensor) else values
+    return out
+
+
+def load_data(args, state="train"):
+    """Main data loader interface. Handles CrossView (train) and Sen4Map (test)."""
+    print("Loading data...")
     start_time = time.time()
 
-    if state == 'train':
+    if state == "train":
         train_dataset, val_dataset, classes = create_crossview_training_dataset(
             h5data_path=args.h5data_train_path,
             sen_path=args.sen_path,
@@ -112,44 +102,39 @@ def load_data(args, state='train'):
             crop_size=args.crop_size,
             channels=args.channels,
             annual_composite=args.time_frames > 1,
-            device=args.device
+            device=args.device,
         )
+        _loader_kwargs = dict(
+            batch_size=args.BATCH_SIZE,
+            num_workers=args.NUM_WORKERS,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=8,
+            drop_last=True,
+        )
+        train_loader = DataLoader(train_dataset, shuffle=True,  **_loader_kwargs)
+        val_loader   = DataLoader(val_dataset,   shuffle=False, **_loader_kwargs)
+
+        print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
+        print(f"Data loaded in {(time.time() - start_time) / 60:.2f} min")
+        return train_loader, val_loader, classes
+
     else:
-        train_dataset, val_dataset, test_dataset, classes = create_sen4map_inference_dataset(
+        # Inference — metadata_csv resolved inside create_sen4map_inference_dataset
+        test_dataset, classes = create_sen4map_inference_dataset(
             h5data_path=args.dataset_path,
-            test_path=args.h5data_testpath,
             crop_size=args.crop_size,
             annual_composite=args.time_frames > 1,
             channels=args.channels,
-            label_type=args.label_type,
             return_coords=args.return_coords,
-            train_size=args.train_size
         )
-
-    print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.BATCH_SIZE,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=8
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.BATCH_SIZE,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=8
-    )
-
-    print(f"Data Loaded in {(time.time() - start_time)/60:.2f} minutes.")
-
-    return train_loader, val_loader, classes
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=args.BATCH_SIZE,
+            shuffle=False,
+            num_workers=args.NUM_WORKERS,
+            collate_fn=collate_fn,
+        )
+        print(f"Test: {len(test_dataset)}")
+        print(f"Data loaded in {(time.time() - start_time) / 60:.2f} min")
+        return test_loader, classes

@@ -263,5 +263,5 @@ crop_class_list = [value for id, value in crop_labels.items()]
 bio_class_list = [value for id, value in bioregion_mapping.items()]
 eunis_class_list = [value for id, value in eunis_mapping.items()]
 class_list_nuts = list(dict.fromkeys([nuts_labels[value] for value in nuts_labels.keys()]))
-# print(len(LC1_class_list))
+# print(crop_class_list)
 

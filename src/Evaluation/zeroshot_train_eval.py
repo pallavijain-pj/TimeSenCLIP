@@ -128,95 +128,72 @@ def val_run_tsms(ts_model, clip_model, batch, classes, device="cuda:0", time_fra
 
 
 
-def test_run_tsms(
-    ts_model,
-    clip_model,
-    batch,
-    classes,
-    template,
-    time_frames=12,
-    channels=None,
-    device="cuda:0",
-    label_type="lc",
-):
-    logging.basicConfig(level=logging.INFO)
 
+
+def test_zeroshot(ts_model, clip_model, batch, classes, 
+                              template, label_type,  time_frames=12
+                              , device ="cuda:3", return_embed=False):
+    
+    cls_type = label_type
+    
     acc_scores = {}
     logits_list = []
     labels_list = []
+   
+    if type(template) is dict:
+        temp_context='class_context'
+    else:
+        temp_context='unified'
 
-    # Determine template context
-    temp_context = 'class_context' if isinstance(template, dict) else 'unified'
 
     cls_list = classes[label_type] if isinstance(classes, dict) else classes
-    label2idx = {label: idx for idx, label in enumerate(cls_list)}
-
-    # Generate zero-shot classifier prompts
-    encoded_prompts = zeroshot_classifier(
-        clip_model, cls_list, template, temp_context=temp_context, device=device
-    ).T  # Transpose to shape (embedding_dim, num_classes)
+    if 'nuts' in label_type:
+        cls_list = [nuts_labels[cls] for cls in cls_list if cls in nuts_labels]
+        # print(cls_list)
+    encoded_prompts = zeroshot_classifier(clip_model, cls_list, template, temp_context=temp_context, device = device).T
 
     total_correct_top1 = 0
     total_correct_top5 = 0
     total_samples = 0
 
-    images, labels = batch['image'], batch[label_type]
-    images = images.to(device)
-
-    # Convert labels to tensor of integer indices
-    if isinstance(labels, list):
-        if isinstance(labels[0], list):  # flatten if nested
-            labels = [item for sublist in labels for item in sublist]
-        if isinstance(labels[0], str):  # convert strings to idx
-            labels = [label2idx[lbl] for lbl in labels]
-        labels = torch.tensor(labels, dtype=torch.long, device=device)
-    elif isinstance(labels, torch.Tensor):
-        if labels.dtype == torch.float32:
-            labels = labels.long()
-        labels = labels.to(device)
+    images = batch['image'].to(device) if 'image' in batch else batch['embedding'].to(device)
+    
+    if 'bio_region' in label_type:
+        labels = batch['bioregion_label']#.to(device)
+    elif 'eunis' in label_type:
+        labels = batch['eunis_label']#.to(device)
+    elif 'nuts' in label_type:
+        labels = [nuts_labels[nut] for nut in  batch['nuts']]
+    elif 'crops' in label_type:
+        labels = batch['crop_label']#.to(device)
+    elif 'lu' in label_type:
+        labels = batch['lu_label']#.to(device)
     else:
-        raise ValueError("Unsupported label format for inference.")
-
-    logging.debug(f"Input images shape: {images.shape}")
+        labels = batch['lc_label']#.to(device)
+        
+    label2idx = {label: idx for idx, label in enumerate(cls_list[label_type])} if isinstance(cls_list, dict) else {label: idx for idx, label in enumerate(cls_list)}
+    if isinstance(labels[0], str):  # If labels are strings
+        labels = torch.tensor([label2idx[lbl] for lbl in labels], device=device)
 
     with torch.no_grad(), torch.cuda.amp.autocast():
-        if time_frames == 4:
-            images = images.view(images.size(0), 4, 3, *images.shape[2:]).median(dim=2)[0]
+        
+        if images.dim() == 5:
+            B, T, S, H, W = images.size()
+        else:
+            B, T, D = images.size()
+        
+        if time_frames == 1 and T==12:
+            images = images.median(dim=1, keepdim=True)[0]
+        elif time_frames == 4 and T==12:
+            images = images.view(B, 4, 3, S, H, W).median(dim=2)[0] if images.dim() == 5 else images.view(B, 4, 3, D).median(dim=2)[0]
 
-        # Extract features
-        image_ts_features = ts_model.inference(images)
-        image_ts_features = F.normalize(image_ts_features, dim=-1)
+        # images = images[:, :time_frames, :, :, :]
+        image_ts_features = ts_model(images)
+        image_ts_features /= image_ts_features.norm(dim=-1, keepdim=True)
+        # logits = 100.0 * image_ts_features @ encoded_prompts
+        logits = (image_ts_features @ encoded_prompts)/2+1
+        logits_list= logits.cpu()
+        labels_list=labels
+        
 
-        # Compute logits and apply adjustment
-        logits = (image_ts_features @ encoded_prompts) / 2 + 1
-
-        predictions = torch.argmax(logits, dim=1)
-        logging.debug(f"Predicted: {predictions}")
-        logging.debug(f"Ground Truth: {labels}")
-
-        logits_list.append(logits)
-        labels_list.append(labels)
-
-        # Compute top-1 and top-5 accuracy
-        correct_top1, correct_top5 = accuracy(logits, labels, topk=(1, 5))
-        total_correct_top1 += correct_top1
-        total_correct_top5 += correct_top5
-        total_samples += labels.size(0)
-
-    # Final Accuracy Metrics
-    top1_acc = total_correct_top1 / total_samples
-    top5_acc = total_correct_top5 / total_samples
-    logging.info(f"[{label_type}] Top-1 Acc: {top1_acc:.4f}, Top-5 Acc: {top5_acc:.4f}")
-
-    # Concatenate all predictions
-    logits_stk = torch.cat(logits_list, dim=0)
-    labels_stk = torch.cat(labels_list, dim=0)
-
-    acc_scores = {
-        'total_correct_top1': total_correct_top1,
-        'total_correct_top5': total_correct_top5,
-        'total_samples': total_samples
-    }
-
-    return acc_scores, logits_stk, labels_stk, encoded_prompts
-
+    return logits_list, labels_list, encoded_prompts

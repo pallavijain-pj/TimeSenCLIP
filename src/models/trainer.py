@@ -27,26 +27,26 @@ class TimeSenCLIPLearner(pl.LightningModule):
         self.queue_size = args.queue_size
         self.pooling = args.pooling
         self.logit_learn = args.logit_learn
-        self.temperature = args.temperature
-
+        temperature = args.temperature
+        print(f"Logit learn: {self.logit_learn}")
         # Initialize logit scale
         if self.logit_learn:
-            print(f"Learnable logit scale with initial temperature: {self.temperature}")
-            self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / self.temperature))
+            print(f"Learnable logit scale with initial temperature: {temperature}")
+            self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / temperature))
         else:
-            self.logit_scale = torch.tensor(np.log(1 / self.temperature), dtype=torch.float32)
-
+            self.logit_scale = torch.tensor(np.log(1 / temperature), dtype=torch.float32)
+   
 
         # Model configs
         self.train_model_kwargs = model_config_load(args, dropout_type=args.dropout_type)
         self.val_model_kwargs = model_config_load(args, dropout_type='None')
 
         # Main Encoder
-        self.TS_ViT = TimeSenCLIP(**self.train_model_kwargs).to(args.device)
-
+        TS_ViT = TimeSenCLIP(**self.train_model_kwargs).to(args.device)
+        
         # Cross-view model
         self.learner = CrossViewModel(
-            self.TS_ViT,
+            TS_ViT,
             embed_dim=1024 if args.ARCH == 'RN50' else 512,
             pooling=args.pooling,
             device=args.device,
@@ -54,13 +54,19 @@ class TimeSenCLIPLearner(pl.LightningModule):
             pool_out=args.pool_out,
             
         )
+        
         torch.backends.cudnn.benchmark = True
 
-    def shared_step(self, batch):
-        logits, labels = self.learner.forward(batch)
+    def shared_step(self, batch, state='train'):
+        if state == 'train':
+            logits, labels = self.learner.forward(batch)
+        else:
+            with torch.no_grad():
+                logits, labels = self.learner_val.forward(batch)
+        
         logit_scale = self.logit_scale.exp() if self.logit_learn else self.logit_scale
-        logits *= logit_scale.to(logits.device)
-        loss = F.cross_entropy(logits, labels)
+        logits *= logit_scale
+        loss = nn.functional.cross_entropy(logits.to(self.args.device), labels.to(self.args.device))
         self.log("logit_scale", logit_scale, prog_bar=True)
         return loss
 
@@ -84,11 +90,20 @@ class TimeSenCLIPLearner(pl.LightningModule):
         model_state = self.learner.state_dict()
         message = self.TS_ViT.load_state_dict(pretrained_weights_ts(model_state), strict=True)
         self.TS_ViT = self.TS_ViT.to(self.args.device).eval()
+        self.learner_val = CrossViewModel(
+            self.TS_ViT,
+            embed_dim=1024 if self.args.ARCH == 'RN50' else 512,
+            pooling=self.args.pooling,
+            device=self.args.device,
+            queue_size=self.args.queue_size,
+            pool_out=self.args.pool_out,
+            
+        )
         print(message)
 
     def validation_step(self, batch, batch_idx):
         batch = [tensor.to(self.args.device) for tensor in batch]
-        loss = self.shared_step(batch)
+        loss = self.shared_step(batch, state='val')
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
         accuracy_scores = val_run_tsms(
@@ -132,4 +147,5 @@ class TimeSenCLIPLearner(pl.LightningModule):
 
     def on_before_zero_grad(self, *args, **kwargs):
         if self.logit_learn:
+            # print("Clamping logit scale")
             self.logit_scale.data = torch.clamp(self.logit_scale.data, 0, 4.6052)

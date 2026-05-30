@@ -5,10 +5,12 @@ def get_callbacks(args):
     return [
         ModelCheckpoint(
             monitor='train_loss',
+            save_last=True,
             save_top_k=2,
             dirpath=base_path,
             filename=f'{args.version_fold}-{{epoch:02d}}-{{loss:.2f}}',
-            every_n_epochs=10
+            every_n_epochs=10,
+            save_on_train_epoch_end=True,
         ),
         ModelCheckpoint(
             monitor='val_top1',

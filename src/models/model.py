@@ -32,7 +32,7 @@ class CrossViewModel(nn.Module):
         self,
         encoder: nn.Module,
         embed_dim: int = 512,
-        pooling: str = 'avgpool',
+        pooling: str = 'attpool_perimage',
         device: int = 0,
         queue_size: int = 2048,
         queue_data: Optional[torch.utils.data.DataLoader] = None,
@@ -123,7 +123,7 @@ class CrossViewModel(nn.Module):
             l_pos = torch.einsum("nc,nc->n", [ts_emb, ground_emb]).unsqueeze(-1)
 
             # Negative logits (NxK)
-            l_neg = torch.einsum("nc,ck->nk", [ts_emb, self.queue.clone().detach()])
+            l_neg = torch.einsum("nc,ck->nk", [ts_emb, self.queue.clone().detach().to(ts_emb.device)])
 
             # Combine logits
             logits = torch.cat([l_pos, l_neg], dim=1)

@@ -35,6 +35,7 @@ def main(args):
         logger=wandb_logger,
         profiler="simple",
         resume_from_checkpoint=f'{args.saved_model}{args.version_fold}/{args.resume_ckpt}' if args.resume else None,
+        # fast_dev_run = 20
     )
 
     trainer.fit(model, train_loader, val_loader)
