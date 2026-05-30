@@ -69,7 +69,7 @@ bash test.sh
 # or directly:
 python zeroshot.py \
     --dataset_path ./data/sen4map/test.h5 \
-    --checkpoint   ./checkpoints/TimeSenCLIP_TSMixAug_encoder.pt \
+    --checkpoint   ./checkpoints/TimeSenCLIP_1x1.ckpt \
     --label_type   lc \
     --BATCH_SIZE   512
 ```
