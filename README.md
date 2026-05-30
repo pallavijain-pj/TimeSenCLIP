@@ -5,7 +5,7 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2508.11919-b31b1b?logo=arxiv)](https://arxiv.org/abs/2508.11919)
 [![ISPRS](https://img.shields.io/badge/ISPRS%20J.%20P%26RS-2026-blue)](https://doi.org/10.1016/j.isprsjprs.2026.03.043)
-[![HuggingFace](https://img.shields.io/badge/🤗%20Weights-Soon-yellow)](https://huggingface.co/pallavijainpj/TimeSenCLIP)
+[![HuggingFace](https://img.shields.io/badge/🤗%20Weights-Available-brightgreen)](https://huggingface.co/pallavijainpj/TimeSenCLIP)
 </div>
 
 ---
@@ -48,8 +48,10 @@ model = TimeSenCLIPEncoder(
     dropout=0.2, dropout_type="None",  # no augmentation at inference
 )
 
-# Encoder weights use clean bare keys — load directly
-state_dict = torch.load("checkpoints/TimeSenCLIP_1x1.pt", map_location="cpu")
+# Download weights from HuggingFace Hub
+from huggingface_hub import hf_hub_download
+ckpt = hf_hub_download(repo_id="pallavijainpj/TimeSenCLIP", filename="TimeSenCLIP_1x1.ckpt")
+state_dict = torch.load(ckpt, map_location="cpu")
 model.load_state_dict(state_dict, strict=True)
 model.eval()
 
@@ -57,7 +59,7 @@ model.eval()
 x = torch.randn(4, 12, 10, 1, 1)
 with torch.no_grad():
     emb = model.inference(x)  # (4, 512)
-print(emb.shape)              # torch.Size([4, 512])
+print(emb.shape)              # torch.Size([4, 512])              # torch.Size([4, 512])
 ```
 ---
 ## 🔍 Zero-shot Evaluation
