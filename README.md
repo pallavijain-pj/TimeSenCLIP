@@ -21,7 +21,7 @@ Built on the **[LUCAS 2018](https://ec.europa.eu/eurostat/web/lucas/database/201
 ---
 # Model Overview
 <div align="center">
-<img src="illustration.png" width="1000" height="2000">
+<img src="illustration.png" width="500" height="1000">
 </div>
 
 ---
